@@ -6,6 +6,7 @@ uses
   System.SysUtils,
   System.IOUtils,
   inLibDir,
+  System.Classes,
   Windows,
   System.Zip,
   System.Generics.Collections;
@@ -135,29 +136,30 @@ begin
   inherited;
 end;
 
-
 procedure TLog.WriteToLogInternal(const AMessage: string);
 var
-  LogFile: TextFile;
-  sLine:string;
+  LogFile: TStreamWriter;
+  sLine: string;
 begin
   if AcquireMutex then
   try
-    AssignFile(LogFile, FLogFileName);
+    sLine := Format('%s - [Instance: %s] %s',
+                    [FormatDateTime('yyyy-mm-dd hh:nn:ss.zzz', Now),
+                     FInstanceID,
+                     AMessage]);
+
+    // Usar TStreamWriter para UTF-8
+    if FileExists(FLogFileName) then
+      LogFile := TStreamWriter.Create(FLogFileName, True, TEncoding.UTF8)
+    else
+      LogFile := TStreamWriter.Create(FLogFileName, False, TEncoding.UTF8);
+
     try
-      if FileExists(FLogFileName) then
-        Append(LogFile)
-      else
-        Rewrite(LogFile);
-      sLine := Format('%s - [Instance: %s] %s',
-                              [FormatDateTime('yyyy-mm-dd hh:nn:ss.zzz', Now),
-                               FInstanceID,
-                               AMessage]);
-      WriteLn(LogFile, sLine);
+      LogFile.WriteLine(sLine);
       if FVerboseMode then
-        writeln(sLine);
+        WriteLn(sLine);
     finally
-      CloseFile(LogFile);
+      LogFile.Free;
     end;
   finally
     ReleaseMutex;

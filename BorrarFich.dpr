@@ -8,6 +8,7 @@ uses
   System.SysUtils,
   IniFiles,
   System.DateUtils,
+  system.classes,
   inLibWin in 'inLibWin.pas',
   inLibFileManager in 'inLibFileManager.pas',
   inLibDir in 'inLibDir.pas',
@@ -21,6 +22,7 @@ var
   CutOffDate: TDateTime;
   Fileman:TFileManager;
   bSimular:Boolean;
+  i:Integer;
 begin
   bSimular := False;
   Folders := leCadINIDir('Settings', 'Folders', '', IniFilePath);
@@ -33,7 +35,7 @@ begin
                                     'Simulate',
                                     'True',
                                     IniFilePath));
-  for var i := 1 to ParamCount do
+  for i := 1 to ParamCount do
   begin
     if UpperCase(ParamStr(i)) = UpperCase('/simulate') then
       bSimular := True
@@ -53,7 +55,8 @@ begin
   CutOffDate := IncMonth(Now, Months*-1);
   CutOffDate := IncDay(CutOffDate, Days*-1);
   CutOffDate := IncYear(CutOffDate, Years*-1);
-  Log.LogInfo('La fecha mínima a conservar es: ' + CutoffDate.ToString);
+  Log.LogInfo('La fecha mínima a conservar es: ' +
+                              FormatDateTime('dd/mm/yyyy hh:nn:ss', CutoffDate));
   Log.LogInfo('Las fechas más antiguas serán eliminadas');
   Log.LogInfo('El número mínimo de ficheros antiguos a conservar es de ' +
               IntToStr(MinFich));
@@ -64,10 +67,23 @@ end;
 
 begin
   try
-    DeleteOldFiles(GetUserFolder + '\config.ini'); // Especificar la ruta del archivo INI aquí
-  except
-    on E: Exception do
-      Log.LogError(E.Message);
+    try
+      DeleteOldFiles(GetUserFolder + '\config.ini');
+    except
+      on E: Exception do
+      begin
+        Log.LogError('ERROR CRÍTICO: ' + E.ClassName + ' - ' + E.Message);
+        // NO usar WriteLn ni ReadLn aquí
+      end;
+    end;
+  finally
+    // Asegurarse de que el log se cierra correctamente
+    if Assigned(Log) then
+      Log.LogInfo('Programa finalizado');
   end;
+
+  // Si es una aplicación de consola y quieres ver el resultado:
+  // Writeln('Presione Enter para salir...');
+  // Readln;
 end.
 

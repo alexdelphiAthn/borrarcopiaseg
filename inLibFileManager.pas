@@ -18,6 +18,7 @@ type
     CreationTime: TDateTime;
     delCan:Boolean;
   end;
+
   TFolderInformation = class
     FolderPath:string;
     MinF:Integer;
@@ -29,6 +30,7 @@ type
     dFechMin:TDateTime;
     FileList:TList<TFileInformation>;
     constructor Create(sFolder:String; aiMin:Integer; adFechMin:TDateTime);
+    destructor Destroy; override;
     procedure GetFilesSortedByCreation(ADirectory:String);
   end;
 
@@ -36,6 +38,7 @@ type
   public
     function Compare(const Left, Right:TFileInformation):Integer;
   end;
+
   TFileManager = class
   private
     FFolderList:TList<TFolderInformation>;
@@ -46,6 +49,7 @@ type
                        const aiMin:Integer;
                        const adFechMin:TDateTime;
                        const aSimular:Boolean);
+    destructor Destroy; override;
     function DelFile(const AFileName:String): Boolean;
     procedure ProcessCandidates;
     procedure DeleteFiles;
@@ -61,9 +65,21 @@ var
   lTempFolder:TArray<String>;
   sFolder:string;
   fFolder:TFolderInformation;
+  i:Integer;
 begin
   Simular:= aSimular;
+    // *** DEPURACIÓN: Ver qué llega ***
+  Log.LogInfo('=== DEPURACIÓN TFileManager.Create ===');
+  Log.LogInfo('ADirectory recibido: [' + ADirectory + ']');
+  Log.LogInfo('Longitud de ADirectory: ' + IntToStr(Length(ADirectory)));
+
   lTempFolder := ADirectory.Split([';']);
+
+  // *** DEPURACIÓN: Ver el resultado del Split ***
+  Log.LogInfo('Número de elementos después del Split: ' + IntToStr(Length(lTempFolder)));
+  for i := 0 to High(lTempFolder) do
+    Log.LogInfo('Elemento[' + IntToStr(i) + ']: [' + lTempFolder[i] + ']');
+//  lTempFolder := ADirectory.Split([';']);
   FFolderList := TList<TFolderInformation>.Create;
   for sFolder in lTempFolder do
   begin
@@ -82,33 +98,90 @@ function TFileManager.DelFile(const AFileName:String): Boolean;
 var
   FilePath: string;
 begin
+  Result := False;
   FilePath := AFileName;
-  if TFile.Exists(FilePath) then
-  begin
-    TFile.Delete(FilePath);
-    Log.LogInfo('Se ha borrado ' + FilePath);
-    Result := True;
-  end
-  else
-  begin
-    Log.LogError('El fichero a borrar no existe: '+ FilePath);
-    Result := False;
+  try
+    if TFile.Exists(FilePath) then
+    begin
+      try
+        TFile.Delete(FilePath);
+        Log.LogInfo('Se ha borrado ' + FilePath);
+        Result := True;
+      except
+        on E: Exception do
+        begin
+          Log.LogError('Error al borrar el fichero [' + FilePath + ']: ' + E.Message);
+          Result := False;
+        end;
+      end;
+    end
+    else
+    begin
+      Log.LogError('El fichero a borrar no existe: '+ FilePath);
+      Result := False;
+    end;
+  except
+    on E: Exception do
+    begin
+      Log.LogError('Excepción inesperada en DelFile [' + FilePath + ']: ' + E.Message);
+      Result := False;
+    end;
   end;
+end;
+
+destructor TFileManager.Destroy;
+var
+  fFolder: TFolderInformation;
+begin
+  // Liberar todos los objetos TFolderInformation de la lista
+  if Assigned(FFolderList) then
+  begin
+    for fFolder in FFolderList do
+      fFolder.Free;
+    FFolderList.Free;
+  end;
+  // Liberar la lista de archivos a borrar
+  if Assigned(FDeleteList) then
+    FDeleteList.Free;
+  inherited;
 end;
 
 procedure TFileManager.DeleteFiles;
 var
-  sFile:string;
+  sFile: string;
+  iDeleted, iFailed: Integer;
 begin
-  if (FDeleteList <> nil) then
+  iDeleted := 0;
+  iFailed := 0;
+  if (FDeleteList <> nil) and (FDeleteList.Count > 0) then
   begin
+    Log.LogInfo('Iniciando borrado de ' + IntToStr(FDeleteList.Count) + ' ficheros...');
+
     for sFile in FDeleteList do
     begin
-      if (Simular) then
-        Log.LogInfo('MODO SIMULACIÓN: Se borraría el fichero:'+sFile)
-      else
-        DelFile(sFile);
+      try
+        if (Simular) then
+        begin
+          Log.LogInfo('MODO SIMULACIÓN: Se borraría el fichero: ' + sFile);
+          Inc(iDeleted);
+        end
+        else
+        begin
+          if DelFile(sFile) then
+            Inc(iDeleted)
+          else
+            Inc(iFailed);
+        end;
+      except
+        on E: Exception do
+        begin
+          Log.LogError('Excepción al procesar fichero [' + sFile + ']: ' + E.Message);
+          Inc(iFailed);
+        end;
+      end;
     end;
+    Log.LogInfo('Proceso completado. Borrados: ' + IntToStr(iDeleted) +
+                ', Fallidos: ' + IntToStr(iFailed));
   end
   else
     Log.LogInfo('No hay candidatos a borrar');
@@ -156,16 +229,23 @@ begin
           begin
             FDeleteList.Add(fFolder.FolderPath +'\'+ fFile.FileName);
             iFilesDel := iFilesDel - 1;
-            log.LogWarning(fFolder.FolderPath + fFile.FileName + ' se borrará' +
+            log.LogWarning(fFolder.FolderPath +'\' + fFile.FileName + ' se borrará' +
                            ' Fecha Modificación: ' +
                            DateTimeToStr(fFile.CreationTime) );
           end;
         end
         else
-          Exit;
+          Break;
       end;
     end;
   end;
+end;
+
+destructor TFolderInformation.Destroy;
+begin
+  if Assigned(FileList) then
+    FileList.Free;
+  inherited;
 end;
 
 procedure TFolderInformation.GetFilesSortedByCreation(ADirectory:String);
